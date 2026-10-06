@@ -56,7 +56,9 @@ export default function App() {
   const navigate = useNavigate()
 
   /* ---- Auth state (demo only) ---- */
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    () => sessionStorage.getItem('heatshield-auth') === 'true'
+  )
 
   /* ---- Assessment data (single source of truth) ---- */
   const [assessmentData, setAssessmentData] = useState<AssessmentData>(emptyAssessment)
@@ -76,6 +78,7 @@ export default function App() {
   /* ---- Callbacks (passed UP from child pages) ---- */
   const handleLogin = useCallback(() => {
     setIsAuthenticated(true)
+    sessionStorage.setItem('heatshield-auth', 'true')
     navigate('/')
   }, [navigate])
 
