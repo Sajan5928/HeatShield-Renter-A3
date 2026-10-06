@@ -4,20 +4,9 @@
         "app": {
             "root": ".",
             "framework": "vite"
-        },
-        "api": {
-            "root": "api",
-            "runtime": "python",
-            "entrypoint": "assessment.py"
         }
     },
     "rewrites": [
-        {
-            "source": "/api/(.*)",
-            "destination": {
-                "service": "api"
-            }
-        },
         {
             "source": "/(.*)",
             "destination": {
