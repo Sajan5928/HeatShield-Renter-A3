@@ -174,7 +174,6 @@ export default function App() {
     if (!scoreResult) return
 
     const payload = {
-      email,
       dwelling_type: assessmentData.room.dwellingType,
       room_type: assessmentData.room.roomType,
       area: assessmentData.room.suburb,
@@ -184,21 +183,39 @@ export default function App() {
       selected_actions: selectedActionIds,
     }
 
-    fetch(assessmentApiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-      .then((res) => {
-        if (!res.ok) return res.json().then((err) => { throw new Error(err.error) })
-        return res.json()
-      })
-      .then((data) => {
-        setSavedAssessmentId(data.id)
-      })
-      .catch((err) => {
-        console.error('Failed to save assessment:', err.message)
-      })
+    async function saveAssessment() {
+      const { data } = await supabase.auth.getSession()
+      const accessToken = data.session?.access_token
+
+      if (!accessToken) {
+        console.error('Failed to save assessment: authentication is required.')
+        return
+      }
+
+      try {
+        const response = await fetch(assessmentApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(payload),
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error)
+        }
+
+        const responseData = await response.json()
+        setSavedAssessmentId(responseData.id)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        console.error('Failed to save assessment:', message)
+      }
+    }
+
+    void saveAssessment()
   }, [location.pathname, savedAssessmentId, email, assessmentData, selectedActionIds, scoreResult])
 
   if (isAuthLoading) {

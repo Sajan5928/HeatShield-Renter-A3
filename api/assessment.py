@@ -14,12 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-    ],
+   allow_origins=[
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+],
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
@@ -52,13 +54,52 @@ def _database_settings() -> tuple[str, dict[str, str]]:
     )
 
 
+async def _verified_user(request: Request) -> tuple[str, str]:
+    """Return the authenticated Supabase user's ID and email."""
+    authorization = request.headers.get("Authorization", "")
+    scheme, _, access_token = authorization.partition(" ")
+
+    if scheme.lower() != "bearer" or not access_token:
+        raise HTTPException(status_code=401, detail="Authentication is required.")
+
+    supabase_url = os.environ.get("SUPABASE_URL")
+    publishable_key = os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+    if not supabase_url or not publishable_key:
+        raise HTTPException(status_code=500, detail="Authentication configuration is unavailable.")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{supabase_url.rstrip('/')}/auth/v1/user",
+                headers={
+                    "apikey": publishable_key,
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+    except httpx.HTTPError as exc:
+        print(f"Supabase authentication verification failed: {type(exc).__name__}")
+        raise HTTPException(status_code=401, detail="Authentication is invalid or expired.") from None
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Authentication is invalid or expired.")
+
+    try:
+        user = response.json()
+        user_id = user["id"]
+        email = user["email"]
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(status_code=401, detail="Authentication is invalid or expired.") from None
+
+    if not isinstance(user_id, str) or not isinstance(email, str):
+        raise HTTPException(status_code=401, detail="Authentication is invalid or expired.")
+
+    return user_id, email
+
+
 def _validate(data: Any) -> str | None:
     """Return an error message string, or None if valid."""
     if not isinstance(data, dict):
         return "Invalid JSON body."
-
-    if not isinstance(data.get("email"), str) or "@" not in data["email"]:
-        return "Invalid or missing email."
 
     if data.get("dwelling_type") not in VALID_DWELLING:
         return "Invalid or missing dwelling_type."
@@ -90,6 +131,8 @@ def _validate(data: Any) -> str | None:
 @app.post("/api/assessment", status_code=201)
 async def create_assessment(request: Request) -> dict[str, Any]:
     """Save an assessment in the existing heat_assessments table."""
+    user_id, email = await _verified_user(request)
+
     try:
         body = await request.json()
     except (ValueError, UnicodeDecodeError):
@@ -101,7 +144,8 @@ async def create_assessment(request: Request) -> dict[str, Any]:
 
     table_url, headers = _database_settings()
     row = {
-        "email": body["email"],
+        "user_id": user_id,
+        "email": email,
         "dwelling_type": body["dwelling_type"],
         "room_type": body["room_type"],
         "area": body["area"],
@@ -135,8 +179,10 @@ async def create_assessment(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/assessment")
-async def get_assessment(id: str | None = Query(default=None)) -> dict[str, Any]:
+async def get_assessment(request: Request, id: str | None = Query(default=None)) -> dict[str, Any]:
     """Retrieve a stored assessment by ID."""
+    user_id, _ = await _verified_user(request)
+
     if id is None:
         raise HTTPException(status_code=400, detail="Missing required query parameter: id.")
 
@@ -151,7 +197,11 @@ async def get_assessment(id: str | None = Query(default=None)) -> dict[str, Any]
             response = await client.get(
                 table_url,
                 headers=headers,
-                params={"id": f"eq.{assessment_id}", "select": "*"},
+                params={
+                    "id": f"eq.{assessment_id}",
+                    "user_id": f"eq.{user_id}",
+                    "select": "*",
+                },
             )
     except httpx.HTTPError as exc:
         print(f"Supabase GET failed: {type(exc).__name__}")
