@@ -1,6 +1,10 @@
 import { Link } from 'react-router-dom'
 
-export default function LandingPage() {
+interface LandingPageProps {
+  onSignOut: () => void
+}
+
+export default function LandingPage({ onSignOut }: LandingPageProps) {
   return (
     <main className="page-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', textAlign: 'center' }}>
       <div style={{ maxWidth: '520px' }}>
@@ -37,6 +41,12 @@ export default function LandingPage() {
         <Link to="/check/room" className="btn btn-primary" style={{ fontSize: 'var(--font-size-lg)', padding: 'var(--space-4) var(--space-8)' }}>
           Start Heat Check
         </Link>
+
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          <button type="button" className="btn btn-secondary" onClick={onSignOut}>
+            Sign Out
+          </button>
+        </div>
 
         <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-400)', marginTop: 'var(--space-6)', marginBottom: 0 }}>
           HeatShield Renter is an educational MVP. The Heat Vulnerability Score is an estimate

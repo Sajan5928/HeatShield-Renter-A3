@@ -1,17 +1,19 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 
 interface LoginPageProps {
-  onLogin: () => void
+  onAuthenticated: (email: string) => void
 }
 
-export default function LoginPage({ onLogin }: LoginPageProps) {
-  const navigate = useNavigate()
+export default function LoginPage({ onAuthenticated }: LoginPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({})
+  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [authMessage, setAuthMessage] = useState('')
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const newErrors: { email?: string; password?: string } = {}
 
@@ -19,14 +21,50 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     else if (!email.includes('@')) newErrors.email = 'Please enter a valid email.'
 
     if (!password.trim()) newErrors.password = 'Please enter your password.'
-    else if (password.length < 4) newErrors.password = 'Password must be at least 4 characters.'
+    else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters.'
 
     setErrors(newErrors)
+    setAuthMessage('')
 
-    if (Object.keys(newErrors).length === 0) {
-      onLogin()
-      navigate('/')
+    if (Object.keys(newErrors).length > 0) return
+
+    setIsSubmitting(true)
+
+    if (mode === 'sign-in') {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
+
+      setIsSubmitting(false)
+
+      if (error || !data.user?.email) {
+        setAuthMessage('Unable to sign in. Check your email and password and try again.')
+        return
+      }
+
+      onAuthenticated(data.user.email)
+      return
     }
+
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+    })
+
+    setIsSubmitting(false)
+
+    if (error) {
+      setAuthMessage('Unable to create your account. Please try again.')
+      return
+    }
+
+    if (data.session && data.user?.email) {
+      onAuthenticated(data.user.email)
+      return
+    }
+
+    setAuthMessage('Check your email to confirm your account, then sign in.')
   }
 
   return (
@@ -37,7 +75,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             🛡️ HeatShield Renter
           </h1>
           <p style={{ color: 'var(--color-gray-600)', fontSize: 'var(--font-size-sm)', marginBottom: 0 }}>
-            Sign in to start your Heat Check
+            {mode === 'sign-in' ? 'Sign in to start your Heat Check' : 'Create an account to start your Heat Check'}
           </p>
         </div>
 
@@ -65,7 +103,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             <input
               id="password"
               type="password"
-              placeholder="Enter any password"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               aria-describedby={errors.password ? 'password-error' : undefined}
@@ -78,14 +116,32 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             )}
           </div>
 
-          <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-            Sign In
+          {authMessage && (
+            <p className="field-error" role="alert">
+              {authMessage}
+            </p>
+          )}
+
+          <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={isSubmitting}>
+            {isSubmitting ? 'Please wait…' : mode === 'sign-in' ? 'Sign In' : 'Create Account'}
           </button>
         </form>
 
         <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-400)', textAlign: 'center', marginTop: 'var(--space-4)', marginBottom: 0 }}>
-          This is a university demonstration. No credentials are stored or transmitted.
-          Enter any email and password to continue.
+          {mode === 'sign-in' ? 'New to HeatShield Renter?' : 'Already have an account?'}
+          {' '}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ padding: 0, border: 0, background: 'none', textDecoration: 'underline' }}
+            onClick={() => {
+              setMode((currentMode) => currentMode === 'sign-in' ? 'sign-up' : 'sign-in')
+              setErrors({})
+              setAuthMessage('')
+            }}
+          >
+            {mode === 'sign-in' ? 'Create Account' : 'Sign In'}
+          </button>
         </p>
       </div>
     </main>

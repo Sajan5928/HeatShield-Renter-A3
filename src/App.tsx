@@ -6,8 +6,8 @@
    UP via callback functions.
    ============================================= */
 
-import { useState, useCallback } from 'react'
-import { Routes, Route, useNavigate, Navigate } from 'react-router-dom'
+import { useState, useCallback, useEffect } from 'react'
+import { Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom'
 
 import type {
   AssessmentData,
@@ -17,6 +17,7 @@ import type {
 } from './types/assessment'
 import { calculateScore } from './utils/scoreCalculator'
 import { getRecommendedActions } from './utils/actionRecommender'
+import { supabase } from './lib/supabase'
 
 import LoginPage from './pages/LoginPage'
 import LandingPage from './pages/LandingPage'
@@ -33,6 +34,9 @@ const emptyAssessment: AssessmentData = {
   assessment: { sunExposure: '', windowShading: '', ventilation: '' },
   heat: { hottestTime: '', discomfortLevel: '', coolingMethods: [] },
 }
+
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '')
+const assessmentApiUrl = `${apiBaseUrl}/assessment`
 
 /* ---- Route guard helpers ---- */
 function isRoomComplete(data: AssessmentData): boolean {
@@ -55,16 +59,21 @@ function isHeatComplete(data: AssessmentData): boolean {
 export default function App() {
   const navigate = useNavigate()
 
-  /* ---- Auth state (demo only) ---- */
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => sessionStorage.getItem('heatshield-auth') === 'true'
-  )
+  /* ---- Supabase authentication state ---- */
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isAuthLoading, setIsAuthLoading] = useState(true)
 
   /* ---- Assessment data (single source of truth) ---- */
   const [assessmentData, setAssessmentData] = useState<AssessmentData>(emptyAssessment)
 
   /* ---- Selected actions for My Plan ---- */
   const [selectedActionIds, setSelectedActionIds] = useState<string[]>([])
+
+  /* ---- Email from authenticated Supabase user ---- */
+  const [email, setEmail] = useState('')
+
+  /* ---- Tracks whether current data has already been saved ---- */
+  const [savedAssessmentId, setSavedAssessmentId] = useState<number | null>(null)
 
   /* ---- Derived values ---- */
   const scoreResult = isHeatComplete(assessmentData)
@@ -75,23 +84,60 @@ export default function App() {
     ? getRecommendedActions(assessmentData)
     : []
 
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadSession() {
+      const { data } = await supabase.auth.getSession()
+      if (!isMounted) return
+
+      setIsAuthenticated(Boolean(data.session?.user))
+      setEmail(data.session?.user.email ?? '')
+      setIsAuthLoading(false)
+    }
+
+    void loadSession()
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(Boolean(session?.user))
+      setEmail(session?.user.email ?? '')
+      setIsAuthLoading(false)
+    })
+
+    return () => {
+      isMounted = false
+      listener.subscription.unsubscribe()
+    }
+  }, [])
+
   /* ---- Callbacks (passed UP from child pages) ---- */
-  const handleLogin = useCallback(() => {
-    setIsAuthenticated(true)
-    sessionStorage.setItem('heatshield-auth', 'true')
+  const handleAuthenticated = useCallback((authenticatedEmail: string) => {
+    setEmail(authenticatedEmail)
     navigate('/')
+  }, [navigate])
+
+  const handleSignOut = useCallback(async () => {
+    await supabase.auth.signOut()
+    setAssessmentData(emptyAssessment)
+    setSelectedActionIds([])
+    setSavedAssessmentId(null)
+    setEmail('')
+    navigate('/login')
   }, [navigate])
 
   const handleRoomUpdate = useCallback((room: AboutRoom) => {
     setAssessmentData((prev) => ({ ...prev, room }))
+    setSavedAssessmentId(null)
   }, [])
 
   const handleAssessmentUpdate = useCallback((assessment: RoomAssessment) => {
     setAssessmentData((prev) => ({ ...prev, assessment }))
+    setSavedAssessmentId(null)
   }, [])
 
   const handleHeatUpdate = useCallback((heat: HeatExperience) => {
     setAssessmentData((prev) => ({ ...prev, heat }))
+    setSavedAssessmentId(null)
   }, [])
 
   const handleToggleAction = useCallback((actionId: string) => {
@@ -100,11 +146,14 @@ export default function App() {
         ? prev.filter((id) => id !== actionId)
         : [...prev, actionId]
     )
+    setSavedAssessmentId(null)
   }, [])
 
   const handleRestart = useCallback(() => {
     setAssessmentData(emptyAssessment)
     setSelectedActionIds([])
+    setSavedAssessmentId(null)
+    setEmail('')
     navigate('/')
   }, [navigate])
 
@@ -113,12 +162,59 @@ export default function App() {
     selectedActionIds.includes(a.id)
   )
 
+  /* ---- Auto-save when user reaches /my-plan ---- */
+  const location = useLocation()
+
+  useEffect(() => {
+    if (location.pathname !== '/my-plan') return
+    if (savedAssessmentId !== null) return
+    if (!email) return
+    if (!isHeatComplete(assessmentData)) return
+    if (selectedActionIds.length === 0) return
+    if (!scoreResult) return
+
+    const payload = {
+      email,
+      dwelling_type: assessmentData.room.dwellingType,
+      room_type: assessmentData.room.roomType,
+      area: assessmentData.room.suburb,
+      floor_position: assessmentData.room.floorPosition ?? null,
+      assessment_data: assessmentData,
+      heat_score: scoreResult.score,
+      selected_actions: selectedActionIds,
+    }
+
+    fetch(assessmentApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then((res) => {
+        if (!res.ok) return res.json().then((err) => { throw new Error(err.error) })
+        return res.json()
+      })
+      .then((data) => {
+        setSavedAssessmentId(data.id)
+      })
+      .catch((err) => {
+        console.error('Failed to save assessment:', err.message)
+      })
+  }, [location.pathname, savedAssessmentId, email, assessmentData, selectedActionIds, scoreResult])
+
+  if (isAuthLoading) {
+    return null
+  }
+
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
+      <Route path="/login" element={
+        isAuthenticated
+          ? <Navigate to="/" replace />
+          : <LoginPage onAuthenticated={handleAuthenticated} />
+      } />
 
       <Route path="/" element={
-        isAuthenticated ? <LandingPage /> : <Navigate to="/login" replace />
+        isAuthenticated ? <LandingPage onSignOut={handleSignOut} /> : <Navigate to="/login" replace />
       } />
 
       <Route path="/check/room" element={
