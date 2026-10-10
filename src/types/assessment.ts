@@ -32,6 +32,19 @@ export interface AssessmentData {
   heat: HeatExperience
 }
 
+/** A saved assessment returned by the authenticated assessment API. */
+export interface SavedAssessment {
+  id: number
+  created_at: string
+  dwelling_type: string
+  room_type: string
+  area: string
+  floor_position: string | null
+  assessment_data: AssessmentData
+  heat_score: number
+  selected_actions: string[]
+}
+
 /** Score calculation result */
 export interface ScoreResult {
   score: number
