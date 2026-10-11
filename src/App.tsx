@@ -27,6 +27,7 @@ import HeatExperiencePage from './pages/HeatExperiencePage'
 import HeatScorePage from './pages/HeatScorePage'
 import ActionPlanPage from './pages/ActionPlanPage'
 import MyPlanPage from './pages/MyPlanPage'
+import PreviousAssessmentsPage from './pages/PreviousAssessmentsPage'
 
 /* ---- Initial empty state ---- */
 const emptyAssessment: AssessmentData = {
@@ -232,6 +233,10 @@ export default function App() {
 
       <Route path="/" element={
         isAuthenticated ? <LandingPage onSignOut={handleSignOut} /> : <Navigate to="/login" replace />
+      } />
+
+      <Route path="/previous-assessments" element={
+        isAuthenticated ? <PreviousAssessmentsPage /> : <Navigate to="/login" replace />
       } />
 
       <Route path="/check/room" element={

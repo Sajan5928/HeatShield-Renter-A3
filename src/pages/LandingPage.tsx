@@ -38,9 +38,14 @@ export default function LandingPage({ onSignOut }: LandingPageProps) {
           </ol>
         </div>
 
-        <Link to="/check/room" className="btn btn-primary" style={{ fontSize: 'var(--font-size-lg)', padding: 'var(--space-4) var(--space-8)' }}>
-          Start Heat Check
-        </Link>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <Link to="/check/room" className="btn btn-primary" style={{ fontSize: 'var(--font-size-lg)', padding: 'var(--space-4) var(--space-8)' }}>
+            Start Heat Check
+          </Link>
+          <Link to="/previous-assessments" className="btn btn-secondary">
+            My Previous Assessments
+          </Link>
+        </div>
 
         <div style={{ marginTop: 'var(--space-4)' }}>
           <button type="button" className="btn btn-secondary" onClick={onSignOut}>

@@ -53,7 +53,7 @@ export default function MyPlanPage({ selectedActions, score, classification, onR
           <button type="button" className="btn btn-secondary" onClick={onRestart}>🔄 Start New Heat Check</button>
         </div>
         <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-400)', textAlign: 'center', marginTop: 'var(--space-6)', marginBottom: 0 }}>
-          No data has been stored. Closing this page will clear your Heat Plan.
+          We’ll attempt to save your assessment while this page is open. Closing this page will clear your Heat Plan.
         </p>
       </div>
     </main>

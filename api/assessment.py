@@ -179,29 +179,31 @@ async def create_assessment(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/assessment")
-async def get_assessment(request: Request, id: str | None = Query(default=None)) -> dict[str, Any]:
-    """Retrieve a stored assessment by ID."""
+async def get_assessment(request: Request, id: str | None = Query(default=None)) -> Any:
+    """Retrieve one stored assessment or a user's previous assessments."""
     user_id, _ = await _verified_user(request)
 
-    if id is None:
-        raise HTTPException(status_code=400, detail="Missing required query parameter: id.")
-
-    try:
-        assessment_id = int(id)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="id must be an integer.") from None
-
     table_url, headers = _database_settings()
+    params = {
+        "user_id": f"eq.{user_id}",
+        "select": "id,created_at,dwelling_type,room_type,area,floor_position,assessment_data,heat_score,selected_actions",
+    }
+
+    if id is None:
+        params.update({"order": "created_at.desc", "limit": "50"})
+    else:
+        try:
+            assessment_id = int(id)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="id must be an integer.") from None
+        params["id"] = f"eq.{assessment_id}"
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 table_url,
                 headers=headers,
-                params={
-                    "id": f"eq.{assessment_id}",
-                    "user_id": f"eq.{user_id}",
-                    "select": "*",
-                },
+                params=params,
             )
     except httpx.HTTPError as exc:
         print(f"Supabase GET failed: {type(exc).__name__}")
@@ -214,6 +216,9 @@ async def get_assessment(request: Request, id: str | None = Query(default=None))
         rows = response.json()
     except ValueError:
         raise HTTPException(status_code=500, detail="Database query failed.") from None
+
+    if id is None:
+        return rows
 
     if not rows:
         raise HTTPException(status_code=404, detail="Assessment not found.")
